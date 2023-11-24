@@ -1,0 +1,65 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Version>0.7.0</Version>
+    <TargetFramework>net7.0</TargetFramework>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <PlatformTarget>x64</PlatformTarget>
+
+    <Title>OnnxStack.StableDiffusion</Title>
+    <Company>Backyard Industries</Company>
+    <Description>
+      Stable Diffusion Integration Library for .NET Core
+
+      This repository harnesses the capabilities of both ONNX Runtime and Microsoft ML, offering a comprehensive solution that empowers developers to build, deploy, and execute machine learning models seamlessly in .NET environments, unlocking a world of possibilities for intelligent applications.
+    </Description>
+    <Copyright>Backyard Industries - 2023</Copyright>
+    <RepositoryUrl>https://github.com/saddam213/OnnxStack</RepositoryUrl>
+    <PackageTags>onnx;onnx-runtime;llm;stable-diffusion</PackageTags>
+    <Authors>sa_ddam213</Authors>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageId>OnnxStack.StableDiffusion</PackageId>
+    <Product>$(AssemblyName)</Product>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <PackageRequireLicenseAcceptance>True</PackageRequireLicenseAcceptance>
+    <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
+    <PackageIcon>OnnxStack - 128x128.png</PackageIcon>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Content Include="cliptokenizer.onnx">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      <PackageCopyToOutput>true</PackageCopyToOutput>
+      <Pack>true</Pack>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\Assets\OnnxStack - 128x128.png">
+      <Pack>True</Pack>
+      <PackagePath>\</PackagePath>
+    </None>
+  </ItemGroup>
+  
+  <ItemGroup>
+    <PackageReference Include="OnnxStack.Core" Version="0.7.0" Condition=" '$(Configuration)' == 'Release' " />
+    <ProjectReference Include="..\OnnxStack.Core\OnnxStack.Core.csproj" Condition=" '$(Configuration)' == 'Debug' " />
+  </ItemGroup>
+
+
+  <ItemGroup>
+    <PackageReference Include="MathNet.Numerics" Version="5.0.0" />
+    <PackageReference Include="NumSharp" Version="0.30.0" />
+    <PackageReference Include="SixLabors.ImageSharp" Version="3.0.2" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="README.md">
+      <Pack>True</Pack>
+      <PackagePath>\</PackagePath>
+    </None>
+  </ItemGroup>
+
+</Project>
