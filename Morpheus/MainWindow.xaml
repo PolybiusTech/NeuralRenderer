@@ -55,7 +55,7 @@
             </Button>
 
             <TextBox x:Name="PromptBox" HorizontalAlignment="Stretch" Height="40" Margin="10" Padding="5" TextWrapping="Wrap" Text="Oil painting of a person" VerticalAlignment="Bottom" Grid.Column="1"
-                Background="#FF202020" BorderThickness="0" Foreground="White" BorderBrush="Transparent" OpacityMask="#BB000000" FontFamily="Consolas">
+                Background="#FF202020" BorderThickness="0" Foreground="White" BorderBrush="Transparent" OpacityMask="#BB000000" FontFamily="Consolas" TextChanged="PromptBoxChanged">
                 <TextBox.Resources>
                     <Style TargetType="Border">
                         <Setter Property="CornerRadius" Value="7"/>
@@ -71,6 +71,11 @@
                     </Style>
                 </Button.Resources>
             </Button>
+        </Grid>
+        <Grid HorizontalAlignment="Left" Height="54" VerticalAlignment="Bottom" Width="59" Margin="10,0,0,60" OpacityMask="#BB000000">
+            <RadioButton x:Name="NeuralCheck" Content="Neural" HorizontalAlignment="Center" VerticalAlignment="Top" GroupName="imageMode" IsChecked="True" FontFamily="Consolas" FontWeight="Bold" Foreground="White" OpacityMask="Black"/>
+            <RadioButton x:Name="CameraCheck" Content="Camera" HorizontalAlignment="Center" VerticalAlignment="Center" GroupName="imageMode" IsChecked="False" FontFamily="Consolas" FontWeight="Bold" Foreground="White" OpacityMask="Black"/>
+            <RadioButton x:Name="CannyCheck" Content="Canny" HorizontalAlignment="Left" Margin="0,40,0,0" VerticalAlignment="Top" GroupName="imageMode" IsChecked="False" FontFamily="Consolas" FontWeight="Bold" Foreground="White" BorderBrush="#FF707070" Background="White" OpacityMask="Black"/>
         </Grid>
     </Grid>
 </Window>

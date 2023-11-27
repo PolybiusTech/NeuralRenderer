@@ -268,6 +268,27 @@ namespace OnnxStack.Core
             };
         }
 
+        public static OrtValue ToOrtValue(this DenseTensor<float> tensor, TensorElementType type)
+        {
+            var dimensions = tensor.Dimensions.ToLong();
+            return type switch
+            {
+                TensorElementType.Float16 => OrtValue.CreateTensorValueFromMemory(OrtMemoryInfo.DefaultInstance, tensor.Buffer.ToFloat16(), dimensions),
+                TensorElementType.BFloat16 => OrtValue.CreateTensorValueFromMemory(OrtMemoryInfo.DefaultInstance, tensor.Buffer.ToBFloat16(), dimensions),
+                _ => OrtValue.CreateTensorValueFromMemory(OrtMemoryInfo.DefaultInstance, tensor.Buffer, dimensions)
+            };
+        }
+
+        public static OrtValue ToOrtValue(this DenseTensor<double> tensor, TensorElementType type)
+        {
+            var dimensions = tensor.Dimensions.ToLong();
+            return type switch
+            {
+                TensorElementType.Double => OrtValue.CreateTensorValueFromMemory(OrtMemoryInfo.DefaultInstance, tensor.Buffer.ToDouble(), dimensions),
+                _ => OrtValue.CreateTensorValueFromMemory(OrtMemoryInfo.DefaultInstance, tensor.Buffer, dimensions)
+            };
+        }
+
 
         /// <summary>
         /// Creates and allocates output tensors buffer.
@@ -328,6 +349,16 @@ namespace OnnxStack.Core
             var floatArray = new Float16[inputMemory.Length];
             for (int i = 0; i < elementCount; i++)
                 floatArray[i] = (Float16)inputMemory.Span[i];
+
+            return floatArray.AsMemory();
+        }
+
+        internal static Memory<Double> ToDouble(this Memory<double> inputMemory)
+        {
+            var elementCount = inputMemory.Length;
+            var floatArray = new Double[inputMemory.Length];
+            for (int i = 0; i < elementCount; i++)
+                floatArray[i] = (Double)inputMemory.Span[i];
 
             return floatArray.AsMemory();
         }

@@ -7,5 +7,6 @@
         TextEncoder = 20,
         VaeEncoder = 30,
         VaeDecoder = 40,
+        Controlnet = 50
     }
 }

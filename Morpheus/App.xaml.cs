@@ -4,6 +4,8 @@ using System.Windows.Threading;
 using OnnxStack.Core;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.DependencyInjection;
+using OnnxStack.Core.Config;
+using OnnxStack.StableDiffusion.Config;
 
 namespace Morpheus
 {
@@ -16,7 +18,8 @@ namespace Morpheus
         public App()
         {
             var builder = Host.CreateApplicationBuilder();
-            builder.Services.AddOnnxStackStableDiffusion();
+            builder.Services.AddOnnxStack();
+            builder.Services.AddSingleton(ConfigManager.LoadConfiguration<StableDiffusionConfig>(nameof(OnnxStackConfig)));
             builder.Services.AddSingleton<MainWindow>();
             _applicationHost = builder.Build();
         }
