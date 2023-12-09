@@ -8,6 +8,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using System.Runtime.InteropServices;
+using System.Diagnostics;
+using System.Threading.Tasks;
 
 namespace OnnxStack.Core
 {
@@ -21,35 +23,44 @@ namespace OnnxStack.Core
                 InterOpNumThreads = configuration.InterOpNumThreads.Value,
                 IntraOpNumThreads = configuration.IntraOpNumThreads.Value
             };
+
+            sessionOptions.AddFreeDimensionOverrideByName("unet_sample_batch", 1);
+            sessionOptions.AddFreeDimensionOverrideByName("unet_sample_channels", 4);
+            sessionOptions.AddFreeDimensionOverrideByName("unet_sample_height", 512 / 8);
+            sessionOptions.AddFreeDimensionOverrideByName("unet_sample_width", 512 / 8);
+            sessionOptions.AddFreeDimensionOverrideByName("unet_time_batch", 1);
+            sessionOptions.AddFreeDimensionOverrideByName("unet_hidden_batch", 1);
+            sessionOptions.AddFreeDimensionOverrideByName("unet_hidden_sequence", 77);
+            sessionOptions.AddFreeDimensionOverrideByName("unet_gdance_batch", 1);
+            sessionOptions.AddFreeDimensionOverrideByName("unet_gdance_dims", 256);
+            sessionOptions.AddFreeDimensionOverrideByName("batch", 1);
+            sessionOptions.AddFreeDimensionOverrideByName("channels", 4);
+            sessionOptions.AddFreeDimensionOverrideByName("height", 64);
+            sessionOptions.AddFreeDimensionOverrideByName("width", 64);
+
             switch (configuration.ExecutionProvider)
             {
                 case ExecutionProvider.DirectML:
+                    Debug.WriteLine("INIT MODEL -> DirectML");
                     sessionOptions.GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL;
                     sessionOptions.EnableMemoryPattern = false;
-
-                    sessionOptions.AddFreeDimensionOverrideByName("unet_sample_batch", 1);
-                    sessionOptions.AddFreeDimensionOverrideByName("unet_sample_channels", 4);
-                    sessionOptions.AddFreeDimensionOverrideByName("unet_sample_height", 512 / 8);
-                    sessionOptions.AddFreeDimensionOverrideByName("unet_sample_width", 512 / 8);
-                    sessionOptions.AddFreeDimensionOverrideByName("unet_time_batch", 1);
-                    sessionOptions.AddFreeDimensionOverrideByName("unet_hidden_batch", 1);
-                    sessionOptions.AddFreeDimensionOverrideByName("unet_hidden_sequence", 77);
-                    sessionOptions.AddFreeDimensionOverrideByName("unet_gdance_batch", 1);
-                    sessionOptions.AddFreeDimensionOverrideByName("unet_gdance_dims", 256);
-
                     sessionOptions.AppendExecutionProvider_DML(configuration.DeviceId.Value);
                     sessionOptions.AppendExecutionProvider_CPU();
                     return sessionOptions;
                 case ExecutionProvider.Cpu:
+                    Debug.WriteLine("INIT MODEL -> CPU");
                     sessionOptions.AppendExecutionProvider_CPU();
                     return sessionOptions;
                 default:
                 case ExecutionProvider.Cuda:
+                    Debug.WriteLine("INIT MODEL -> CUDA");
                     sessionOptions.GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL;
                     sessionOptions.AppendExecutionProvider_CUDA(configuration.DeviceId.Value);
+                    // sessionOptions.AppendExecutionProvider_Tensorrt(configuration.DeviceId.Value);
                     sessionOptions.AppendExecutionProvider_CPU();
                     return sessionOptions;
                 case ExecutionProvider.CoreML:
+                    Debug.WriteLine("INIT -> CoreML");
                     sessionOptions.AppendExecutionProvider_CoreML(
                         CoreMLFlags.COREML_FLAG_ONLY_ENABLE_DEVICE_WITH_ANE
                     );
@@ -387,10 +398,16 @@ namespace OnnxStack.Core
         /// <returns></returns>
         internal static Memory<float> ToFloat(this ReadOnlySpan<Float16> inputMemory)
         {
-            var elementCount = inputMemory.Length;
-            var floatArray = new float[elementCount];
-            for (int i = 0; i < elementCount; i++)
-                floatArray[i] = (float)inputMemory[i];
+            var input = inputMemory.ToArray();
+            var floatArray = new float[inputMemory.Length];
+
+            /*for (int i = 0; i < elementCount; i++)
+                floatArray[i] = (float)inputMemory[i];*/
+
+            Parallel.For(0, inputMemory.Length, i =>
+            {
+                floatArray[i] = (float) input[i];
+            });
 
             return floatArray.AsMemory();
         }

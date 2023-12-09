@@ -40,25 +40,28 @@ namespace Morpheus
 
         bool running = false;
         bool loaded = false;
-        byte[] buffer;
+        byte[] buffer = new byte[512 * 512 * 3];
         int seed;
 
         DenseTensor<float> promptembeds;
+        DenseTensor<float> timeTensor = new DenseTensor<float>(new int[] { 1 });
+        DenseTensor<double> condScale = new DenseTensor<double>(new int[] { 1 });
 
         Dictionary<string, OrtValue> cnetI = new Dictionary<string, OrtValue>();
         Dictionary<string, OrtValue> cnetO = new Dictionary<string, OrtValue>();
         Dictionary<string, OrtValue> unetI = new Dictionary<string, OrtValue>();
         Dictionary<string, OrtValue> unetO = new Dictionary<string, OrtValue>();
+        Dictionary<string, OrtValue> dnetI = new Dictionary<string, OrtValue>();
+        Dictionary<string, OrtValue> dnetO = new Dictionary<string, OrtValue>();
 
         public MainWindow()
         {
             InitializeComponent();
             display = new WriteableBitmap(512, 512, 96, 96, PixelFormats.Bgr24, null);
             Canvas.Source = display;
-            camera = new VideoCapture();
+            camera = new VideoCapture(0);
             camera.ImageGrabbed += OnCameraFrame;
             camera.Start();
-            buffer = new byte[512 * 512 * 3];
             onnx = App.GetService<IOnnxModelService>();
             config = App.GetService<StableDiffusionConfig>();
             model = config.OnnxModelSets[0];
@@ -81,7 +84,7 @@ namespace Morpheus
             img = img.Resize(512, 512, Inter.Linear);
             img.ROI = System.Drawing.Rectangle.Empty;
 
-            canny = img.Canny(90, 120).Convert<Bgr, byte>();
+            canny = img.Canny(90, 100).Convert<Bgr, byte>();
 
             if (NeuralCheck.IsChecked ?? true)
             {
@@ -105,9 +108,12 @@ namespace Morpheus
             {
                 SchedulerOptions scheduler = new SchedulerOptions
                 {
-                    InferenceSteps = 2,
-                    OriginalInferenceSteps = 2,
-                    SchedulerType = SchedulerType.LCM,
+                    InferenceSteps = 1,
+                    OriginalInferenceSteps = 1,
+                    BetaStart = 0.00001f, // 0.00085f
+                    BetaEnd = 0.011f, // 0.012f
+                    TrainTimesteps = 1040,
+                    BetaSchedule = BetaScheduleType.Linear,
                     Seed = seed
                 };
 
@@ -118,9 +124,14 @@ namespace Morpheus
                 Debug.WriteLine("Generate: " + sw.ElapsedMilliseconds);
                 sw.Restart();
 
-                TensorToBuffer(await DecodeLatentsAsync(latent), buffer);
+                var shit = await DecodeLatentsAsync(latent);
 
                 Debug.WriteLine("Decode: " + sw.ElapsedMilliseconds);
+                sw.Restart();
+
+                TensorToBuffer(shit, buffer);
+
+                Debug.WriteLine("ToBuffer: " + sw.ElapsedMilliseconds);
                 sw.Restart();
             }
         }
@@ -135,14 +146,18 @@ namespace Morpheus
                 var timesteps = scheduler.Timesteps;
 
                 // Create latent sample
-                var sample = scheduler.CreateRandomSample(new int[] { 1, 4, 64, 64 }, scheduler.InitNoiseSigma);
-                var latents = latent != null ? latent.MultiplyBy(0.1f).Add(sample.MultiplyBy(0.9f)) : sample;
+                var noise = scheduler.CreateRandomSample(new int[] { 1, 4, 64, 64 }, 1f);
+                var latents = latent != null ? scheduler.AddNoise(latent, noise, timesteps) : noise;
 
                 Debug.WriteLine("Sample: " + sw.ElapsedMilliseconds);
                 sw.Restart();
 
                 // Get Guidance Scale Embedding
-                var guidanceEmbeddings = GetGuidanceScaleEmbedding(1.0f);
+                var guidanceEmbeddings = GetGuidanceScaleEmbedding(12f);
+
+                TensorToSpan(promptembeds).CopyTo(cnetI["encoder_hidden_states"].GetTensorMutableDataAsSpan<Float16>());
+                TensorToSpan(controlImage).CopyTo(cnetI["controlnet_cond"].GetTensorMutableDataAsSpan<Float16>());
+                TensorToSpan(guidanceEmbeddings).CopyTo(unetI["timestep_cond"].GetTensorMutableDataAsSpan<Float16>());
 
                 // Denoised result
                 DenseTensor<float> denoised = null;
@@ -153,19 +168,13 @@ namespace Morpheus
                 {
                     step++;
 
-                    DenseTensor<double> condScale = new DenseTensor<double>(new int[] { 1 });
-                    condScale[0] = step == 1 ? 0.8f : 0.4f;
-
-                    DenseTensor<float> timeTensor = new DenseTensor<float>(new int[] { 1 });
+                    condScale[0] = 0.5f;
                     timeTensor[0] = timestep;
 
                     TensorToSpan(latents).CopyTo(cnetI["sample"].GetTensorMutableDataAsSpan<Float16>());
                     TensorToSpan(timeTensor).CopyTo(cnetI["timestep"].GetTensorMutableDataAsSpan<Float16>());
-                    TensorToSpan(promptembeds).CopyTo(cnetI["encoder_hidden_states"].GetTensorMutableDataAsSpan<Float16>());
-                    TensorToSpan(controlImage).CopyTo(cnetI["controlnet_cond"].GetTensorMutableDataAsSpan<Float16>());
+                    
                     condScale.Buffer.Span.CopyTo(cnetI["conditioning_scale"].GetTensorMutableDataAsSpan<double>());
-
-                    TensorToSpan(guidanceEmbeddings).CopyTo(unetI["timestep_cond"].GetTensorMutableDataAsSpan<Float16>());
 
                     Debug.WriteLine("Copy: " + sw.ElapsedMilliseconds);
                     sw.Restart();
@@ -238,8 +247,8 @@ namespace Morpheus
 
         private DenseTensor<float> GetGuidanceScaleEmbedding(float guidance, int embeddingDim = 256)
         {
-            var scale = guidance - 1f;
-            var halfDim = embeddingDim / 2;
+            float scale = guidance - 1f;
+            int halfDim = embeddingDim / 2;
             float log = MathF.Log(10000.0f) / (halfDim - 1);
             var emb = Enumerable.Range(0, halfDim)
                 .Select(x => MathF.Exp(x * -log))
@@ -257,30 +266,19 @@ namespace Morpheus
 
         public async Task<DenseTensor<float>> DecodeLatentsAsync(DenseTensor<float> latents)
         {
-            // Scale and decode the image latents with vae.
-            latents = latents.MultiplyBy(1.0f / model.ScaleFactor);
+            var sw = Stopwatch.StartNew();
 
-            var inputNames = onnx.GetInputNames(model, OnnxModelType.VaeDecoder);
-            var outputNames = onnx.GetOutputNames(model, OnnxModelType.VaeDecoder);
-            var outputMetaData = onnx.GetOutputMetadata(model, OnnxModelType.VaeDecoder);
-            var outputTensorMetaData = outputMetaData[outputNames[0]];
+            TensorToSpan(latents).CopyTo(dnetI["latent_sample"].GetTensorMutableDataAsSpan<Float16>());
 
-            var outputDim = new[] { 1, 3, 512, 512 };
-            using (var inputTensorValue = latents.ToOrtValue(outputTensorMetaData))
-            using (var outputTensorValue = outputTensorMetaData.CreateOutputBuffer(outputDim))
-            {
-                var inputs = new Dictionary<string, OrtValue> { { inputNames[0], inputTensorValue } };
-                var outputs = new Dictionary<string, OrtValue> { { outputNames[0], outputTensorValue } };
+            await onnx.RunInferenceAsync(model, OnnxModelType.VaeDecoder, dnetI, dnetO);
+            Debug.WriteLine("VAERun: " + sw.ElapsedMilliseconds);
+            sw.Restart();
 
-                var sw = Stopwatch.StartNew();
-                var results = await onnx.RunInferenceAsync(model, OnnxModelType.VaeDecoder, inputs, outputs);
-                Debug.WriteLine("VAERun: " + sw.ElapsedMilliseconds);
+            var fuck = dnetO["sample"].ToDenseTensor();
+            Debug.WriteLine("F**K: " + sw.ElapsedMilliseconds);
+            sw.Restart();
 
-                using (var imageResult = results.First())
-                {
-                    return imageResult.ToDenseTensor();
-                }
-            }
+            return fuck;
         }
 
         public async Task<DenseTensor<float>> CreatePromptAsync(string prompt)
@@ -372,6 +370,8 @@ namespace Morpheus
                 foreach (string name in cnetO.Keys) { cnetO[name].Dispose(); cnetO.Remove(name); }
                 foreach (string name in unetI.Keys) { unetI[name].Dispose(); unetI.Remove(name); }
                 foreach (string name in unetO.Keys) { unetO[name].Dispose(); unetO.Remove(name); }
+                foreach (string name in dnetI.Keys) { unetI[name].Dispose(); unetI.Remove(name); }
+                foreach (string name in dnetO.Keys) { unetO[name].Dispose(); unetO.Remove(name); }
 
                 LoadModel.Content = "Load Model";
                 StartRender.IsEnabled = false;
@@ -419,6 +419,9 @@ namespace Morpheus
                 unetI["mid_block"] = cnetO["mid_block"];
 
                 unetO["out_sample"] = OrtValue.CreateAllocatedTensorValue(OrtAllocator.DefaultInstance, TensorElementType.Float16, new long[] { 1, 4, 64, 64 });
+
+                dnetI["latent_sample"] = OrtValue.CreateAllocatedTensorValue(OrtAllocator.DefaultInstance, TensorElementType.Float16, new long[] { 1, 4, 64, 64 });
+                dnetO["sample"] = OrtValue.CreateAllocatedTensorValue(OrtAllocator.DefaultInstance, TensorElementType.Float16, new long[] { 1, 3, 512, 512 });
 
                 LoadModel.Content = "Unload Model";
                 StartRender.IsEnabled = true;
